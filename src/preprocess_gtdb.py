@@ -151,7 +151,7 @@ def main():
     df = preprocess_full16s(DATA_FILE=DATA_FILE, MIN_LENGTH=MIN_LENGTH, MAX_LENGTH=MAX_LENGTH)
     print_stats(df)
     logging.info(f'Saving dataframe as gtdb.r220.full-length.csv.gz')
-    df.to_csv(Path('../data/gtdb.r220.full-length.csv.gz'), sep=';', index=False, compression='gzip')
+    df.to_csv(Path('../data/gtdb.r220.full-length.csv.gz'), sep='\t', index=False, compression='gzip')
     logging.info(f'Preprocessing and deduplicating - Full16S - Completed')
 
 
@@ -160,7 +160,7 @@ def main():
     df = preprocess_v3v4(DATA_FILE=DATA_FILE)
     print_stats(df)
     logging.info(f'Saving dataframe as gtdb.r220.full-length.V3V4.csv.gz')
-    df.to_csv(Path('../data/gtdb.r220.full-length.V3V4.csv.gz'), sep=';', index=False, compression='gzip')
+    df.to_csv(Path('../data/gtdb.r220.full-length.V3V4.csv.gz'), sep='\t', index=False, compression='gzip')
     logging.info(f'Preprocessing and deduplicating - V3V4 - Completed')
 
 
