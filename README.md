@@ -1,7 +1,7 @@
 # Alignment-free Bacterial Taxonomy Classification with Genomic Language Models
 
-**\[Alignment-free Bacterial Taxonomy Classification with Genomic Language Models]**
 Author(s): Mike Leske, Jamie A. FitzGerald, Keith Coughlan, Francesca Bottacini, Haithem Afli, Bruno Gabriel Nascimento Andrade
+
 📄 [Link to Paper](https://www.biorxiv.org/content/10.1101/2025.06.27.662019v1)
 
 ---
