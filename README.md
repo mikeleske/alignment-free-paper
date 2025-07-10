@@ -11,7 +11,7 @@ Author(s): Mike Leske, Jamie A. FitzGerald, Keith Coughlan, Francesca Bottacini,
 This repository accompanies our paper on leveraging **Genomic Language Models (gLM)** for **bacterial classification using 16S rRNA sequences**. We explore the feasibility of applying gLM embeddings to bioinformatics tasks traditionally dominated by alignment-based methods.
 
 Our study demonstrates that:
-~~~~
+
 * gLM embeddings can classify bacterial sequences at the **species level** with accuracy **matching or exceeding** established tools like **BLAST+** and **VSEARCH**.
 * The **cosine similarity** metric allows the compute-efficient sequence classification **orders of magnitude faster** than BLAST+ and VSEARCH, while still preserving **biological relevance**.
 * Embeddings allow for the **detection of mislabeled sequences**, adding a layer of quality control.
