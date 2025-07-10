@@ -1,0 +1,8 @@
+pandas
+numpy
+transformers==4.50.1
+umap-learn
+torch
+einops
+faiss
+biopython
