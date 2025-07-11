@@ -1,17 +1,23 @@
-import torch
-import pandas as pd
-import numpy as np
-from tqdm import tqdm
 from pathlib import Path
 
-from transformers import AutoTokenizer, AutoModel, AutoModelForMaskedLM, AutoModelForCausalLM, AutoConfig
+import numpy as np
+import pandas as pd
+import torch
 from torch import nn
+from tqdm import tqdm
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    AutoModelForCausalLM,
+    AutoModelForMaskedLM,
+    AutoTokenizer,
+)
 
 
 class CustomEmbedding(nn.Module):
-  def unembed(self, u):
-    return u
-  
+    def unembed(self, u):
+        return u
+
 
 def load_model_from_hf(model_name: str, maskedlm: bool = False, causallm: bool = False):
     """
@@ -27,18 +33,15 @@ def load_model_from_hf(model_name: str, maskedlm: bool = False, causallm: bool =
         ValueError: If the model name is invalid or loading fails.
     """
     try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_name,
-            trust_remote_code=True
-        )
+        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         if maskedlm:
             model = AutoModelForMaskedLM.from_pretrained(
-                model_name,
-                trust_remote_code=True,
-                device_map={"": 0}
+                model_name, trust_remote_code=True, device_map={"": 0}
             )
         elif causallm:
-            model_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True, revision="1.1_fix")
+            model_config = AutoConfig.from_pretrained(
+                model_name, trust_remote_code=True, revision="1.1_fix"
+            )
             model_config.use_cache = True
             model = AutoModelForCausalLM.from_pretrained(
                 model_name,
@@ -49,9 +52,7 @@ def load_model_from_hf(model_name: str, maskedlm: bool = False, causallm: bool =
             )
         else:
             model = AutoModel.from_pretrained(
-                model_name,
-                trust_remote_code=True,
-                device_map={"": 0}
+                model_name, trust_remote_code=True, device_map={"": 0}
             )
         return model, tokenizer
     except Exception as e:
@@ -79,7 +80,7 @@ def get_emb(model, tokenizer, seq: str, device: str) -> torch.Tensor:
         raise ValueError("Input sequence must be a string.")
 
     device = torch.device(device)
-    
+
     try:
         inputs = tokenizer(seq, return_tensors="pt")["input_ids"].to(device)
         with torch.no_grad():
@@ -111,7 +112,7 @@ def get_emb_nt(model, tokenizer, seq: str, device: str = "cuda") -> torch.Tensor
         raise ValueError("Input sequence must be a string.")
 
     device = torch.device(device)
-    
+
     try:
         inputs = tokenizer(seq, return_tensors="pt")["input_ids"].to(device)
         attention_mask = inputs != tokenizer.pad_token_id
@@ -119,11 +120,18 @@ def get_emb_nt(model, tokenizer, seq: str, device: str = "cuda") -> torch.Tensor
             inputs,
             attention_mask=attention_mask,
             encoder_attention_mask=attention_mask,
-            output_hidden_states=True
+            output_hidden_states=True,
         )
-        embeddings = torch_outs['hidden_states'][-1].detach()#.numpy()
+        embeddings = torch_outs["hidden_states"][-1].detach()  # .numpy()
         attention_mask = torch.unsqueeze(attention_mask, dim=-1)
-        mean_sequence_embeddings = (torch.sum(attention_mask*embeddings, axis=-2)/torch.sum(attention_mask, axis=1)).cpu().numpy()
+        mean_sequence_embeddings = (
+            (
+                torch.sum(attention_mask * embeddings, axis=-2)
+                / torch.sum(attention_mask, axis=1)
+            )
+            .cpu()
+            .numpy()
+        )
         return mean_sequence_embeddings
     except Exception as e:
         raise RuntimeError(f"Error during embedding generation: {e}")
@@ -154,11 +162,13 @@ def get_emb_evo(model, tokenizer, seq: str, device: str = "cuda") -> np.ndarray:
     try:
         inputs = tokenizer(seq, return_tensors="pt")["input_ids"].to(device)
         embed = model(inputs)
-        mean_sequence_embedding = embed.logits.mean(dim=1).cpu().detach().float().numpy()
+        mean_sequence_embedding = (
+            embed.logits.mean(dim=1).cpu().detach().float().numpy()
+        )
         return mean_sequence_embedding
     except Exception as e:
         raise RuntimeError(f"Error during embedding generation: {e}")
- 
+
 
 def drop_duplicate_sequences(df: pd.DataFrame, column: str = "Seq") -> pd.DataFrame:
     """
@@ -177,7 +187,9 @@ def drop_duplicate_sequences(df: pd.DataFrame, column: str = "Seq") -> pd.DataFr
     if column not in df.columns or "Taxa" not in df.columns:
         raise ValueError(f"DataFrame must contain columns 'Taxa' and '{column}'.")
 
-    return df.drop_duplicates(subset=["Taxa", column], keep="first").reset_index(drop=True)
+    return df.drop_duplicates(subset=["Taxa", column], keep="first").reset_index(
+        drop=True
+    )
 
 
 def vectorize(
@@ -187,7 +199,7 @@ def vectorize(
     df: pd.DataFrame,
     column: str = "Seq",
     embeddings_numpy_file: str = None,
-    batch_size: int = 10000
+    batch_size: int = 10000,
 ) -> None:
     """
     Generate embeddings for sequences in a DataFrame column and save to a NumPy file.
@@ -206,16 +218,16 @@ def vectorize(
     """
     if embeddings_numpy_file is None:
         raise ValueError("embeddings_numpy_file cannot be None.")
-    
+
     if column not in df.columns:
         raise ValueError(f"Column '{column}' not found in DataFrame.")
-    
+
     embeddings_numpy_file = embeddings_numpy_file
     vectors = []
     embeddings = None
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f'Using device={device}')
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device={device}")
 
     try:
         # Process rows in batches
@@ -239,7 +251,9 @@ def vectorize(
             vectors = np.vstack(vectors)
             embeddings = _save_embeddings_batch(vectors, embeddings_numpy_file)
 
-        print(f"Final embeddings shape: {embeddings.shape if embeddings is not None else (0,)}")
+        print(
+            f"Final embeddings shape: {embeddings.shape if embeddings is not None else (0,)}"
+        )
     except Exception as e:
         raise RuntimeError(f"Error during vectorization: {e}")
 
@@ -285,58 +299,63 @@ def _file_exists(file_path: str) -> bool:
 
 
 def main() -> None:
-
-
     MODELS = {
-        'DNABERT2': 'zhihan1996/DNABERT-2-117M', 
-        'DNABERTS': 'zhihan1996/DNABERT-S',
-        'NT2-500': 'InstaDeepAI/nucleotide-transformer-v2-500m-multi-species', 
-        'Evo131K': 'togethercomputer/evo-1-131k-base'
+        "DNABERT2": "zhihan1996/DNABERT-2-117M",
+        "DNABERTS": "zhihan1996/DNABERT-S",
+        "NT2-500": "InstaDeepAI/nucleotide-transformer-v2-500m-multi-species",
+        "Evo131K": "togethercomputer/evo-1-131k-base",
     }
     SEQ_FILES = [
-        '../data/gg2.2024.09.backbone.full-length.csv.gz',
-        '../data/gg2.2024.09.backbone.full-length.V3V4.csv.gz',
-        '../data/gtdb.r220.full-length.csv.gz',
-        '../data/gtdb.r220.full-length.V3V4.csv.gz'
+        "../data/gg2.2024.09.backbone.full-length.csv.gz",
+        "../data/gg2.2024.09.backbone.full-length.V3V4.csv.gz",
+        "../data/gtdb.r220.full-length.csv.gz",
+        "../data/gtdb.r220.full-length.V3V4.csv.gz",
     ]
 
     for model_name, model_id in MODELS.items():
-        print(f'Loading model {model_id}')
-        
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        
-        if 'DNABERT' in model_name:
-            model, tokenizer = load_model_from_hf(model_id, maskedlm=False, causallm=False)
+        print(f"Loading model {model_id}")
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        if "DNABERT" in model_name:
+            model, tokenizer = load_model_from_hf(
+                model_id, maskedlm=False, causallm=False
+            )
             model.to(device)
             model.eval()
-        elif 'NT' in model_name:
-            model, tokenizer = load_model_from_hf(model_id, maskedlm=True, causallm=False)
+        elif "NT" in model_name:
+            model, tokenizer = load_model_from_hf(
+                model_id, maskedlm=True, causallm=False
+            )
             model.to(device)
             model.eval()
-        elif 'Evo' in model_name:
-            model, tokenizer = load_model_from_hf(model_id, maskedlm=False, causallm=True)
+        elif "Evo" in model_name:
+            model, tokenizer = load_model_from_hf(
+                model_id, maskedlm=False, causallm=True
+            )
             model.to(device)
             model.eval()
             model.backbone.unembed = CustomEmbedding()
 
-
         for seq_file in SEQ_FILES:
-            print(f'Loading sequence file {seq_file}')
-            df = pd.read_csv(seq_file, sep='\t')
-            embed_column = 'V3V4' if 'V3V4' in seq_file else 'Seq'
-            emb_file_path = Path('../data/embeddings') / seq_file.replace('csv.gz', model_name + '.npy')
+            print(f"Loading sequence file {seq_file}")
+            df = pd.read_csv(seq_file, sep="\t")
+            embed_column = "V3V4" if "V3V4" in seq_file else "Seq"
+            emb_file_path = Path("../data/embeddings") / seq_file.replace(
+                "csv.gz", model_name + ".npy"
+            )
             print(emb_file_path)
 
             vectorize(
                 model_name=model_name,
-                model=model, 
-                tokenizer=tokenizer, 
-                df=df, 
-                column=embed_column, 
-                embeddings_numpy_file=emb_file_path
+                model=model,
+                tokenizer=tokenizer,
+                df=df,
+                column=embed_column,
+                embeddings_numpy_file=emb_file_path,
             )
 
 
 # --------------------------------------------------
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

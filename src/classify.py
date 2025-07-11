@@ -1,31 +1,29 @@
 import os
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
-import pandas as pd
-import numpy as np
-import random
-from tqdm import tqdm
-from pathlib import Path
-
-from typing import Tuple, List
-
-import faiss
-
-import umap
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 import logging
+import random
+import warnings
+from pathlib import Path
+from typing import List, Tuple
+
+import faiss
+import numpy as np
+import pandas as pd
+import umap
+from tqdm import tqdm
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 
 logger = logging.getLogger()
 
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
-warnings.simplefilter(action='ignore', category=UserWarning)
+warnings.simplefilter(action="ignore", category=FutureWarning)
+warnings.simplefilter(action="ignore", category=UserWarning)
 
 
 def create_faiss_db(dim: int):
@@ -44,6 +42,7 @@ def create_faiss_db(dim: int):
     """
     return faiss.index_factory(dim, "Flat", faiss.METRIC_INNER_PRODUCT)
 
+
 def add_vectors_to_db(embeddings: np.ndarray, vdb) -> None:
     """
     Normalizes embeddings and adds them to the FAISS index.
@@ -57,6 +56,7 @@ def add_vectors_to_db(embeddings: np.ndarray, vdb) -> None:
     """
     faiss.normalize_L2(embeddings)
     vdb.add(embeddings)
+
 
 def get_knn(emb: np.ndarray, vdb, k: int):
     """
@@ -79,10 +79,9 @@ def get_knn(emb: np.ndarray, vdb, k: int):
     faiss.normalize_L2(emb)
     return vdb.search(emb, k=k)
 
+
 def filter_dataset(
-    df: pd.DataFrame, 
-    embeddings: np.ndarray, 
-    bp_range: tuple | None
+    df: pd.DataFrame, embeddings: np.ndarray, bp_range: tuple | None
 ) -> pd.DataFrame:
     """
     Filters a DataFrame and its corresponding embeddings by sequence length.
@@ -103,20 +102,21 @@ def filter_dataset(
         The filtered DataFrame and the corresponding filtered embeddings.
     """
     if bp_range:
-        df = df[(df['SeqLen'] > bp_range[0]) & (df['SeqLen'] < bp_range[1])]
+        df = df[(df["SeqLen"] > bp_range[0]) & (df["SeqLen"] < bp_range[1])]
 
     embeddings = embeddings[df.index]
     df = df.reset_index(drop=True)
     return df, embeddings
 
+
 def run_faiss(
-    df: pd.DataFrame, 
-    embeddings: np.ndarray, 
-    min_species_count: int, 
-    vdb: faiss.IndexFlat, 
-    n_samples: int, 
-    k: int
-    ) -> list:
+    df: pd.DataFrame,
+    embeddings: np.ndarray,
+    min_species_count: int,
+    vdb: faiss.IndexFlat,
+    n_samples: int,
+    k: int,
+) -> list:
     """
     Run FAISS k-NN search on a filtered subset of sequences.
 
@@ -144,16 +144,20 @@ def run_faiss(
     # 1. Not the only sequence for a species (i.e. at least one other sequence available to match against)
     # 2. Names species
     #
-    species_counts = df['Species'].value_counts()
+    species_counts = df["Species"].value_counts()
     species_filtered = species_counts[species_counts >= min_species_count].index.values
-    species_filtered = [species for species in species_filtered if (species != 's__' and ' sp' not in species)]
-    idxs = df[df['Species'].isin(species_filtered)].index
+    species_filtered = [
+        species
+        for species in species_filtered
+        if (species != "s__" and " sp" not in species)
+    ]
+    idxs = df[df["Species"].isin(species_filtered)].index
 
     # Select n_samples query_ids
     # We purposely select query sequences from the database.
     # During the classification stage, we remove the query from the results before calculating accuracy scores.
     query_ids = random.sample(sorted(idxs), n_samples)
-    return [ get_knn(emb=embeddings[query_ids], vdb=vdb, k=k), query_ids ]
+    return [get_knn(emb=embeddings[query_ids], vdb=vdb, k=k), query_ids]
 
 
 def process_faiss_results(faiss_results: tuple, df: pd.DataFrame) -> list:
@@ -173,16 +177,16 @@ def process_faiss_results(faiss_results: tuple, df: pd.DataFrame) -> list:
         A list of counts indicating how many times the top-1 result matched the query
         at each taxonomic level (Phylum, Class, Order, Family, Genus, Species).
     """
-    levels = ['Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
+    levels = ["Phylum", "Class", "Order", "Family", "Genus", "Species"]
     results = [0 for _ in levels]
 
-    df_taxons = df['Taxon'].to_list()
+    df_taxons = df["Taxon"].to_list()
 
     (query_results_dis, query_results_ann), query_ids = faiss_results
 
     for i, query_id in enumerate(query_ids):
-        query_data = df_taxons[query_id].split('; ')
-        
+        query_data = df_taxons[query_id].split("; ")
+
         similarities = query_results_dis[i]
         anns = query_results_ann[i]
 
@@ -200,20 +204,19 @@ def process_faiss_results(faiss_results: tuple, df: pd.DataFrame) -> list:
         top_taxons = [df_taxons[ann] for ann in anns]
 
         for il, level in enumerate(levels):
-            query_level_name_full = '; '.join(query_data[:il+2])
-            top_names_full = ['; '.join(taxon.split('; ')[:il+2]) for taxon in top_taxons]
+            query_level_name_full = "; ".join(query_data[: il + 2])
+            top_names_full = [
+                "; ".join(taxon.split("; ")[: il + 2]) for taxon in top_taxons
+            ]
 
             if query_level_name_full in top_names_full:
                 results[il] += 1
-    
+
     return results
 
 
 def load_data(
-    dataset: str, 
-    data_path: Path, 
-    emb_path: Path,
-    bp_range: List[int]
+    dataset: str, data_path: Path, emb_path: Path, bp_range: List[int]
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """
     Loads and preprocesses a dataset and its associated embeddings.
@@ -227,7 +230,7 @@ def load_data(
     Returns:
         Tuple[pd.DataFrame, np.ndarray]: Filtered dataframe and corresponding embeddings.
     """
-    delimiter = '\t' if dataset == 'GG2' else ';'
+    delimiter = "\t" if dataset == "GG2" else ";"
 
     try:
         df = pd.read_csv(data_path, sep=delimiter)
@@ -240,21 +243,21 @@ def load_data(
         raise ValueError(f"Failed to load embeddings from {emb_path}: {e}")
 
     # Normalize column names
-    if 'V3V4Len' in df.columns:
-        df = df.rename(columns={
-            'V3V4': 'Seq',
-            'V3V4Len': "SeqLen",
-        })
+    if "V3V4Len" in df.columns:
+        df = df.rename(
+            columns={
+                "V3V4": "Seq",
+                "V3V4Len": "SeqLen",
+            }
+        )
 
-    if dataset == 'GTDB':
-        df = df.rename(columns={'Taxa': 'Taxon'})
-        df['Taxon'] = df['Taxon'].astype(str).str.replace('~', '; ')
+    if dataset == "GTDB":
+        df = df.rename(columns={"Taxa": "Taxon"})
+        df["Taxon"] = df["Taxon"].astype(str).str.replace("~", "; ")
 
     # Filter based on sequence length or other criteria
     df_filtered, embeddings_filtered = filter_dataset(
-        df=df, 
-        embeddings=embeddings, 
-        bp_range=bp_range
+        df=df, embeddings=embeddings, bp_range=bp_range
     )
 
     df_filtered.reset_index(drop=True, inplace=True)
@@ -262,11 +265,7 @@ def load_data(
     return df_filtered, embeddings_filtered
 
 
-def print_results(
-    res: list, 
-    df: pd.DataFrame, 
-    min_count: int
-) -> None:
+def print_results(res: list, df: pd.DataFrame, min_count: int) -> None:
     """
     Processes and prints classification accuracy at each taxonomic level.
 
@@ -274,25 +273,27 @@ def print_results(
         res: List of FAISS result for multiple runs.
         df (pd.DataFrame): Reference dataframe with taxonomic labels.
         min_count (int): Minimum count threshold used in the classification pipeline.
-    """ 
-    levels = ['Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']  
+    """
+    levels = ["Phylum", "Class", "Order", "Family", "Genus", "Species"]
     all_results = []
-    
+
     for faiss_result in res:
         result = process_faiss_results(faiss_results=faiss_result, df=df)
         all_results.append(result)
 
     mean_results = np.round(np.array(all_results).mean(axis=0) / 10, 2)
 
-    levels = ['Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species']
-    results_df  = pd.DataFrame([mean_results], columns=levels)
+    levels = ["Phylum", "Class", "Order", "Family", "Genus", "Species"]
+    results_df = pd.DataFrame([mean_results], columns=levels)
 
-    logger.info(f'Classification results for min_count = {min_count}:\n{results_df .to_markdown()}')
+    logger.info(
+        f"Classification results for min_count = {min_count}:\n{results_df.to_markdown()}"
+    )
 
 
 def classify_with_default_embeddings(
     dataset: str,
-    data_path: Path, 
+    data_path: Path,
     emb_path: Path,
     n_runs: int,
     n_samples: int,
@@ -316,10 +317,7 @@ def classify_with_default_embeddings(
 
     logger.info("Loading data...")
     df, embeddings = load_data(
-        dataset=dataset,
-        data_path=data_path,
-        emb_path=emb_path,
-        bp_range=bp_range
+        dataset=dataset, data_path=data_path, emb_path=emb_path, bp_range=bp_range
     )
     logger.info("Data loading completed.")
 
@@ -336,12 +334,12 @@ def classify_with_default_embeddings(
         results = []
         for _ in tqdm(range(n_runs), desc=f"min_count={min_count}"):
             faiss_results = run_faiss(
-                df=df, 
-                embeddings=embeddings, 
-                min_species_count=min_count, 
-                vdb=vdb, 
-                n_samples=n_samples, 
-                k=k
+                df=df,
+                embeddings=embeddings,
+                min_species_count=min_count,
+                vdb=vdb,
+                n_samples=n_samples,
+                k=k,
             )
             results.append(faiss_results)
 
@@ -350,7 +348,7 @@ def classify_with_default_embeddings(
 
 def classify_with_umap_embeddings(
     dataset: str,
-    data_path: Path, 
+    data_path: Path,
     emb_path: Path,
     n_runs: int,
     n_samples: int,
@@ -378,21 +376,18 @@ def classify_with_umap_embeddings(
 
         logger.info("Loading data...")
         df, embeddings = load_data(
-            dataset=dataset,
-            data_path=data_path,
-            emb_path=emb_path,
-            bp_range=bp_range
+            dataset=dataset, data_path=data_path, emb_path=emb_path, bp_range=bp_range
         )
         logger.info("Data loading complete.")
 
         logger.info("Applying UMAP transformation...")
         embeddings = umap.UMAP(
-            random_state=42, 
-            n_neighbors=15, 
-            min_dist=0.25, 
-            metric='braycurtis', 
-            n_components=umap_dim
-        ).fit_transform( embeddings )
+            random_state=42,
+            n_neighbors=15,
+            min_dist=0.25,
+            metric="braycurtis",
+            n_components=umap_dim,
+        ).fit_transform(embeddings)
         logger.info("UMAP transformation complete.")
 
         for min_count in min_counts:
@@ -406,18 +401,21 @@ def classify_with_umap_embeddings(
             logger.info(f"Running {n_runs} classification runs...")
 
             results = []
-            for _ in tqdm(range(n_runs), desc=f"UMAP={umap_dim}, min_count={min_count}"):
+            for _ in tqdm(
+                range(n_runs), desc=f"UMAP={umap_dim}, min_count={min_count}"
+            ):
                 faiss_results = run_faiss(
                     df=df,
                     embeddings=embeddings,
                     min_species_count=min_count,
                     vdb=vdb,
                     n_samples=n_samples,
-                    k=k
+                    k=k,
                 )
                 results.append(faiss_results)
 
             print_results(res=results, df=df, min_count=min_count)
+
 
 def main():
     #
@@ -425,14 +423,16 @@ def main():
     #
     N_RUNS = 100
     N_SAMPLES = 1_000
-    MODELS = ['DNABERT2', 'DNABERTS', 'NT2-500', 'Evo131K']
+    MODELS = ["DNABERT2", "DNABERTS", "NT2-500", "Evo131K"]
 
     #
     # Greengenes2 Full 16S - Default embeddings
     #
-    DATASET = 'GG2'
-    DATA_PATH = Path('../../Greengenes2/2024.09/df.2024.09.backbone.full-length.csv.gz')
-    BASE_EMB_PATH = '../../Greengenes2/2024.09/embeddings/df.2024.09.backbone.full-length.MODEL.npy'
+    DATASET = "GG2"
+    DATA_PATH = Path("../../Greengenes2/2024.09/df.2024.09.backbone.full-length.csv.gz")
+    BASE_EMB_PATH = (
+        "../../Greengenes2/2024.09/embeddings/df.2024.09.backbone.full-length.MODEL.npy"
+    )
     BP_RANGE = [1450, 1550]
     K = 11
 
@@ -445,7 +445,9 @@ def main():
         emb_path = Path(BASE_EMB_PATH.replace("MODEL", model))
 
         if not emb_path.exists():
-            logger.warning(f"Skipping model `{model}`: embedding file not found at {emb_path}")
+            logger.warning(
+                f"Skipping model `{model}`: embedding file not found at {emb_path}"
+            )
             continue
 
         try:
@@ -459,14 +461,18 @@ def main():
                 n_samples=N_SAMPLES,
             )
         except Exception as e:
-            logger.error(f"Error during classification for model `{model}`: {e}", exc_info=True)
+            logger.error(
+                f"Error during classification for model `{model}`: {e}", exc_info=True
+            )
 
     #
     # Greengenes2 Full V3V4 - Default embeddings
     #
-    DATASET = 'GG2'
-    DATA_PATH = Path('../Greengenes2/2024.09/df.2024.09.backbone.full-length.V3V4.csv.gz')
-    BASE_EMB_PATH = '../Greengenes2/2024.09/embeddings/df.2024.09.backbone.full-length.V3V4.MODEL.npy'
+    DATASET = "GG2"
+    DATA_PATH = Path(
+        "../Greengenes2/2024.09/df.2024.09.backbone.full-length.V3V4.csv.gz"
+    )
+    BASE_EMB_PATH = "../Greengenes2/2024.09/embeddings/df.2024.09.backbone.full-length.V3V4.MODEL.npy"
     BP_RANGE = [390, 440]
     K = 51
 
@@ -479,7 +485,9 @@ def main():
         emb_path = Path(BASE_EMB_PATH.replace("MODEL", model))
 
         if not emb_path.exists():
-            logger.warning(f"Skipping model `{model}`: embedding file not found at {emb_path}")
+            logger.warning(
+                f"Skipping model `{model}`: embedding file not found at {emb_path}"
+            )
             continue
 
         try:
@@ -493,14 +501,16 @@ def main():
                 n_samples=N_SAMPLES,
             )
         except Exception as e:
-            logger.error(f"Error during classification for model `{model}`: {e}", exc_info=True)
+            logger.error(
+                f"Error during classification for model `{model}`: {e}", exc_info=True
+            )
 
     #
     # GTDB Full 16S - Default embeddings
     #
-    DATASET = 'GTDB'
-    DATA_PATH = Path('../GTDB/GTDB_r220-DNABERTS-COUNTS-IDList_1400_1600.csv.gz')
-    BASE_EMB_PATH = '../GTDB/embeddings/GTDB_r220-MODEL-EMB-1400-1600.npy'
+    DATASET = "GTDB"
+    DATA_PATH = Path("../GTDB/GTDB_r220-DNABERTS-COUNTS-IDList_1400_1600.csv.gz")
+    BASE_EMB_PATH = "../GTDB/embeddings/GTDB_r220-MODEL-EMB-1400-1600.npy"
     BP_RANGE = [1450, 1550]
     K = 11
 
@@ -513,7 +523,9 @@ def main():
         emb_path = Path(BASE_EMB_PATH.replace("MODEL", model))
 
         if not emb_path.exists():
-            logger.warning(f"Skipping model `{model}`: embedding file not found at {emb_path}")
+            logger.warning(
+                f"Skipping model `{model}`: embedding file not found at {emb_path}"
+            )
             continue
 
         try:
@@ -527,14 +539,16 @@ def main():
                 n_samples=N_SAMPLES,
             )
         except Exception as e:
-            logger.error(f"Error during classification for model `{model}`: {e}", exc_info=True)
+            logger.error(
+                f"Error during classification for model `{model}`: {e}", exc_info=True
+            )
 
     #
     # GTDB Full V3V4 - Default embeddings
     #
-    DATASET = 'GTDB'
-    DATA_PATH = Path('../GTDB/GTDB_r220-DNABERTS-COUNTS-IDList_390_440.csv.gz')
-    BASE_EMB_PATH = '../GTDB/embeddings/GTDB_r220-MODEL-EMB-V3V4-390-440.npy'
+    DATASET = "GTDB"
+    DATA_PATH = Path("../GTDB/GTDB_r220-DNABERTS-COUNTS-IDList_390_440.csv.gz")
+    BASE_EMB_PATH = "../GTDB/embeddings/GTDB_r220-MODEL-EMB-V3V4-390-440.npy"
     BP_RANGE = [390, 440]
     K = 51
 
@@ -547,7 +561,9 @@ def main():
         emb_path = Path(BASE_EMB_PATH.replace("MODEL", model))
 
         if not emb_path.exists():
-            logger.warning(f"Skipping model `{model}`: embedding file not found at {emb_path}")
+            logger.warning(
+                f"Skipping model `{model}`: embedding file not found at {emb_path}"
+            )
             continue
 
         try:
@@ -561,15 +577,18 @@ def main():
                 n_samples=N_SAMPLES,
             )
         except Exception as e:
-            logger.error(f"Error during classification for model `{model}`: {e}", exc_info=True)
-
+            logger.error(
+                f"Error during classification for model `{model}`: {e}", exc_info=True
+            )
 
     #
     # Greengenes2 Full 16S - UMAP transformation
     #
-    DATASET = 'GG2'
-    DATA_PATH = Path('../Greengenes2/2024.09/df.2024.09.backbone.full-length.csv.gz')
-    BASE_EMB_PATH = '../Greengenes2/2024.09/embeddings/df.2024.09.backbone.full-length.MODEL.npy'
+    DATASET = "GG2"
+    DATA_PATH = Path("../Greengenes2/2024.09/df.2024.09.backbone.full-length.csv.gz")
+    BASE_EMB_PATH = (
+        "../Greengenes2/2024.09/embeddings/df.2024.09.backbone.full-length.MODEL.npy"
+    )
     BP_RANGE = [1450, 1550]
     K = 11
 
@@ -582,7 +601,9 @@ def main():
         emb_path = Path(BASE_EMB_PATH.replace("MODEL", model))
 
         if not emb_path.exists():
-            logger.warning(f"Skipping model `{model}`: embedding file not found at {emb_path}")
+            logger.warning(
+                f"Skipping model `{model}`: embedding file not found at {emb_path}"
+            )
             continue
 
         try:
@@ -596,14 +617,18 @@ def main():
                 n_samples=N_SAMPLES,
             )
         except Exception as e:
-            logger.error(f"Error during classification for model `{model}`: {e}", exc_info=True)
+            logger.error(
+                f"Error during classification for model `{model}`: {e}", exc_info=True
+            )
 
     #
     # Greengenes2 Full V3V4 - UMAP transformation
     #
-    DATASET = 'GG2'
-    DATA_PATH = Path('../Greengenes2/2024.09/df.2024.09.backbone.full-length.V3V4.csv.gz')
-    BASE_EMB_PATH = '../Greengenes2/2024.09/embeddings/df.2024.09.backbone.full-length.V3V4.MODEL.npy'
+    DATASET = "GG2"
+    DATA_PATH = Path(
+        "../Greengenes2/2024.09/df.2024.09.backbone.full-length.V3V4.csv.gz"
+    )
+    BASE_EMB_PATH = "../Greengenes2/2024.09/embeddings/df.2024.09.backbone.full-length.V3V4.MODEL.npy"
     BP_RANGE = [390, 440]
     K = 51
 
@@ -616,7 +641,9 @@ def main():
         emb_path = Path(BASE_EMB_PATH.replace("MODEL", model))
 
         if not emb_path.exists():
-            logger.warning(f"Skipping model `{model}`: embedding file not found at {emb_path}")
+            logger.warning(
+                f"Skipping model `{model}`: embedding file not found at {emb_path}"
+            )
             continue
 
         try:
@@ -630,14 +657,16 @@ def main():
                 n_samples=N_SAMPLES,
             )
         except Exception as e:
-            logger.error(f"Error during classification for model `{model}`: {e}", exc_info=True)
+            logger.error(
+                f"Error during classification for model `{model}`: {e}", exc_info=True
+            )
 
     #
     # GTDB Full 16S - UMAP transformation
     #
-    DATASET = 'GTDB'
-    DATA_PATH = Path('../GTDB/GTDB_r220-DNABERTS-COUNTS-IDList_1400_1600.csv.gz')
-    BASE_EMB_PATH = '../GTDB/embeddings/GTDB_r220-MODEL-EMB-1400-1600.npy'
+    DATASET = "GTDB"
+    DATA_PATH = Path("../GTDB/GTDB_r220-DNABERTS-COUNTS-IDList_1400_1600.csv.gz")
+    BASE_EMB_PATH = "../GTDB/embeddings/GTDB_r220-MODEL-EMB-1400-1600.npy"
     BP_RANGE = [1450, 1550]
     K = 11
 
@@ -650,7 +679,9 @@ def main():
         emb_path = Path(BASE_EMB_PATH.replace("MODEL", model))
 
         if not emb_path.exists():
-            logger.warning(f"Skipping model `{model}`: embedding file not found at {emb_path}")
+            logger.warning(
+                f"Skipping model `{model}`: embedding file not found at {emb_path}"
+            )
             continue
 
         try:
@@ -664,14 +695,16 @@ def main():
                 n_samples=N_SAMPLES,
             )
         except Exception as e:
-            logger.error(f"Error during classification for model `{model}`: {e}", exc_info=True)
+            logger.error(
+                f"Error during classification for model `{model}`: {e}", exc_info=True
+            )
 
     #
     # GTDB Full V3V4 - UMAP transformation
     #
-    DATASET = 'GTDB'
-    DATA_PATH = Path('../GTDB/GTDB_r220-DNABERTS-COUNTS-IDList_390_440.csv.gz')
-    BASE_EMB_PATH = '../GTDB/embeddings/GTDB_r220-MODEL-EMB-V3V4-390-440.npy'
+    DATASET = "GTDB"
+    DATA_PATH = Path("../GTDB/GTDB_r220-DNABERTS-COUNTS-IDList_390_440.csv.gz")
+    BASE_EMB_PATH = "../GTDB/embeddings/GTDB_r220-MODEL-EMB-V3V4-390-440.npy"
     BP_RANGE = [390, 440]
     K = 51
 
@@ -684,7 +717,9 @@ def main():
         emb_path = Path(BASE_EMB_PATH.replace("MODEL", model))
 
         if not emb_path.exists():
-            logger.warning(f"Skipping model `{model}`: embedding file not found at {emb_path}")
+            logger.warning(
+                f"Skipping model `{model}`: embedding file not found at {emb_path}"
+            )
             continue
 
         try:
@@ -698,7 +733,10 @@ def main():
                 n_samples=N_SAMPLES,
             )
         except Exception as e:
-            logger.error(f"Error during classification for model `{model}`: {e}", exc_info=True)
+            logger.error(
+                f"Error during classification for model `{model}`: {e}", exc_info=True
+            )
+
 
 if __name__ == "__main__":
     main()

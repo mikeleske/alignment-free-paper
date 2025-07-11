@@ -1,6 +1,8 @@
 from pathlib import Path
 from zipfile import ZipFile
+
 import requests
+
 
 def download_file(url: str, dest_path: Path):
     """
@@ -14,11 +16,11 @@ def download_file(url: str, dest_path: Path):
     response = requests.get(url, stream=True)
     response.raise_for_status()
 
-    with open(dest_path, 'wb') as f:
+    with open(dest_path, "wb") as f:
         for chunk in response.iter_content(chunk_size=8192):
             if chunk:
                 f.write(chunk)
-    print(f"Download completed.")
+    print("Download completed.")
 
 
 def unzip_gza_file(zip_path: Path, extract_dir: Path):
@@ -26,10 +28,10 @@ def unzip_gza_file(zip_path: Path, extract_dir: Path):
     Unzips a .gza (ZIP) file to the specified directory.
     """
     try:
-        with ZipFile(zip_path, 'r') as zip_ref:
+        with ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(path=extract_dir)
         print(f"Unzipped: {zip_path.name} → {extract_dir}")
-    except:
+    except:  # noqa: E722
         print(f"Error: {zip_path.name} is not a valid ZIP archive.")
 
 
